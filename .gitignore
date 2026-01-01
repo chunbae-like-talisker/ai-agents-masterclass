@@ -5,8 +5,11 @@ build/
 dist/
 wheels/
 *.egg-info
+.DS_Store
+*.db
 
 # Virtual environments
 .venv
 .env
+.vscode/
 
