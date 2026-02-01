@@ -1,36 +1,62 @@
 from google.adk.agents import Agent
-from google.adk.models.lite_llm import LiteLlm
+from google.adk.tools import ToolContext
+from google.adk.tools.agent_tool import AgentTool
+from google.genai import Gemini, types
 
-MODEL = LiteLlm("openai/gpt-4o-mini")
+from financial_advisor.prompt import PROMPT
+from financial_advisor.sub_agents.data_analyst import data_analyst
+from financial_advisor.sub_agents.financial_analyst import financial_analyst
+from financial_advisor.sub_agents.news_analyst import news_analyst
 
-
-def get_weather(city: str) -> str:
-    return f"The weather in {city} is 30 degrees Celsius."
-
-
-def conver_units(degrees: int) -> str:
-    return f"{degrees} degrees Celsius is {degrees * 1.8 + 32} degrees Fahrenheit."
-
-
-geo_agent = Agent(
-    name="GeoAgent",
-    instruction="You help the user with geographic questions",
-    model=MODEL,
-    description="Transfer to this agent when you have a geographic question",
-)
+MODEL = Gemini(model="gemini-2.5-flash")
 
 
-weather_agent = Agent(
-    name="WeatherAgent",
-    instruction="You help the user with weather related questions",
+async def save_advice_report(tool_context: ToolContext, summary: str, ticker: str):
+    state = tool_context.state
+    data_analyst_result = state.get("data_analyst_result")
+    financial_analyst_result = state.get("financial_analyst_result")
+    new_analyst_result = state.get("new_analyst_result")
+    report = f"""
+        # Executive Summary and Advice:
+        {summary}
+
+        # Data Analyst Report:
+        {data_analyst_result}
+
+        # Financial Analyst Report:
+        {financial_analyst_result}
+
+        # News Analyst Report:
+        {new_analyst_result}
+    """
+    state["report"] = report
+
+    filename = f"{ticker}_investment_advice.md"
+
+    artifact = types.Part(
+        inline_data=types.Blob(
+            mime_type="text/markdown",
+            data=report.encode("utf-8"),
+        )
+    )
+
+    await tool_context.save_artifact(filename, artifact)
+
+    return {
+        "success": True,
+    }
+
+
+financial_advisor = Agent(
+    name="FinancialAdvisor",
+    instruction=PROMPT,
     model=MODEL,
     tools=[
-        get_weather,
-        conver_units,
-    ],
-    sub_agents=[
-        geo_agent,
+        AgentTool(agent=financial_analyst),
+        AgentTool(agent=news_analyst),
+        AgentTool(agent=data_analyst),
+        save_advice_report,
     ],
 )
 
-root_agent = weather_agent
+root_agent = financial_advisor
